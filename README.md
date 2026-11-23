@@ -2,6 +2,11 @@
 
 A local, zero-cost URL shortener with click analytics, built with Go.
 
+> **No account, no cloud, no credentials required.** The local MVP runs entirely
+> on your machine with Go. It does not use AWS, MongoDB Atlas, Redis Cloud,
+> Upstash, credit cards, or any paid service. The AWS phase is optional and has
+> not been set up.
+
 This is the **Phase 1 local MVP** of the LinkPulse project. It runs with nothing
 but Go — no AWS account, no Docker, no database server, no paid service.
 

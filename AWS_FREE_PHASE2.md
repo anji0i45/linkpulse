@@ -1,5 +1,10 @@
-# LinkPulse Phase 2 — Free AWS Plan
+# LinkPulse Phase 2 — Optional Free AWS Plan
 
+> **STOP: No account has been created. No credentials are stored here.**
+> This file is only an optional future plan. Do not create an AWS account or add
+> any payment/account details unless you personally choose to. The current
+> project is 100% local and free.
+>
 > Current status: **Phase 1 local MVP is complete and running.**
 > Phase 2 is not deployed yet. Do not remove `(In Progress)` from the resume
 > until the AWS version is actually working.
