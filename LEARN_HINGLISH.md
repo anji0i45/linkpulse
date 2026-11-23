@@ -318,7 +318,7 @@ me zarurat nahi, AWS version me useful hai.
 
 | Feature | Abhi local | AWS version |
 |---|---|---|
-| HTTP server | Go `net/http` | API Gateway + Lambda |
+| HTTP server | Go + Gin | API Gateway + Lambda |
 | Link storage | JSON file | DynamoDB |
 | Cache | In-memory map | Redis / Upstash |
 | Queue | Go channel | SQS |

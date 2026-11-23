@@ -1,6 +1,6 @@
 # LinkPulse
 
-A local, zero-cost URL shortener with click analytics, built with Go.
+A local, zero-cost URL shortener with click analytics, built with Go and Gin.
 
 > **No account, no cloud, no credentials required.** The local MVP runs entirely
 > on your machine with Go. It does not use AWS, MongoDB Atlas, Redis Cloud,
@@ -23,7 +23,7 @@ but Go — no AWS account, no Docker, no database server, no paid service.
 - Persist links and clicks in a local JSON file
 - Cache hot links in memory for fast redirects
 - Dashboard at `http://localhost:8080`
-- No external dependencies
+- No external services; Gin is the only web framework dependency
 
 ## Quick start
 
@@ -125,7 +125,7 @@ linkpulse/
 
 The local MVP proves the core backend flow:
 
-- Go HTTP APIs
+- Go + Gin REST APIs
 - URL validation
 - Redirects
 - Persistence

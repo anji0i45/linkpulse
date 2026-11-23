@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"linkpulse/internal/cache"
 	"linkpulse/internal/queue"
 	"linkpulse/internal/store"
@@ -40,6 +42,8 @@ type createLinkResponse struct {
 }
 
 func NewServer(st store.Store, linkCache cache.LinkCache, publisher queue.Publisher, baseURL string) http.Handler {
+	gin.SetMode(gin.ReleaseMode)
+
 	s := &Server{
 		store:     st,
 		cache:     linkCache,
@@ -47,117 +51,120 @@ func NewServer(st store.Store, linkCache cache.LinkCache, publisher queue.Publis
 		baseURL:   strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", s.dashboard)
-	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
-	mux.HandleFunc("GET /healthz", s.health)
-	mux.HandleFunc("POST /api/links", s.createLink)
-	mux.HandleFunc("GET /api/links", s.listLinks)
-	mux.HandleFunc("GET /api/analytics/{code}", s.analytics)
-	mux.HandleFunc("GET /{code}", s.redirect)
+	router := gin.New()
+	router.Use(gin.Logger(), gin.Recovery())
 
-	return withLogging(mux)
+	router.GET("/", s.dashboard)
+	router.GET("/favicon.ico", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	router.GET("/healthz", s.health)
+	router.POST("/api/links", s.createLink)
+	router.GET("/api/links", s.listLinks)
+	router.GET("/api/analytics/:code", s.analytics)
+
+	// Short links are handled by NoRoute so Gin does not have to mix a
+	// root-level wildcard with the /api routes.
+	router.NoRoute(s.redirect)
+
+	return router
 }
 
-func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
+func (s *Server) dashboard(c *gin.Context) {
 	page, err := dashboardFS.ReadFile("web/index.html")
 	if err != nil {
-		http.Error(w, "dashboard unavailable", http.StatusInternalServerError)
+		c.String(http.StatusInternalServerError, "dashboard unavailable")
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write(page)
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusOK, "text/html; charset=utf-8", page)
 }
 
-func (s *Server) health(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+func (s *Server) health(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
-func (s *Server) createLink(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+func (s *Server) createLink(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20)
 
 	var request createLinkRequest
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if err := json.NewDecoder(c.Request.Body).Decode(&request); err != nil {
+		writeError(c, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 
 	longURL, err := normalizeLongURL(request.LongURL)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	link, err := s.store.CreateLink(r.Context(), longURL)
+	link, err := s.store.CreateLink(c.Request.Context(), longURL)
 	if err != nil {
 		log.Printf("create link: %v", err)
-		writeError(w, http.StatusInternalServerError, "could not create link")
+		writeError(c, http.StatusInternalServerError, "could not create link")
 		return
 	}
 	s.cache.Set(link)
 
-	writeJSON(w, http.StatusCreated, createLinkResponse{
+	c.JSON(http.StatusCreated, createLinkResponse{
 		Code:      link.Code,
-		ShortURL:  s.shortURL(r, link.Code),
+		ShortURL:  s.shortURL(c, link.Code),
 		LongURL:   link.LongURL,
 		CreatedAt: link.CreatedAt,
 	})
 }
 
-func (s *Server) listLinks(w http.ResponseWriter, r *http.Request) {
-	links, err := s.store.ListLinks(r.Context())
+func (s *Server) listLinks(c *gin.Context) {
+	links, err := s.store.ListLinks(c.Request.Context())
 	if err != nil {
 		log.Printf("list links: %v", err)
-		writeError(w, http.StatusInternalServerError, "could not load links")
+		writeError(c, http.StatusInternalServerError, "could not load links")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"links": links})
+	c.JSON(http.StatusOK, gin.H{"links": links})
 }
 
-func (s *Server) analytics(w http.ResponseWriter, r *http.Request) {
-	code := r.PathValue("code")
-	analytics, err := s.store.GetAnalytics(r.Context(), code)
+func (s *Server) analytics(c *gin.Context) {
+	code := c.Param("code")
+	analytics, err := s.store.GetAnalytics(c.Request.Context(), code)
 	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "link not found")
+		writeError(c, http.StatusNotFound, "link not found")
 		return
 	}
 	if err != nil {
 		log.Printf("analytics: %v", err)
-		writeError(w, http.StatusInternalServerError, "could not load analytics")
+		writeError(c, http.StatusInternalServerError, "could not load analytics")
 		return
 	}
-	writeJSON(w, http.StatusOK, analytics)
+	c.JSON(http.StatusOK, analytics)
 }
 
-func (s *Server) redirect(w http.ResponseWriter, r *http.Request) {
-	code := r.PathValue("code")
-	if !validCode(code) {
-		http.NotFound(w, r)
+func (s *Server) redirect(c *gin.Context) {
+	code := strings.TrimPrefix(c.Request.URL.Path, "/")
+	if strings.Contains(code, "/") || !validCode(code) {
+		writeError(c, http.StatusNotFound, "link not found")
 		return
 	}
 
 	link, ok := s.cache.Get(code)
 	if !ok {
 		var err error
-		link, err = s.store.GetLink(r.Context(), code)
+		link, err = s.store.GetLink(c.Request.Context(), code)
 		if errors.Is(err, store.ErrNotFound) {
-			http.NotFound(w, r)
+			writeError(c, http.StatusNotFound, "link not found")
 			return
 		}
 		if err != nil {
 			log.Printf("get link: %v", err)
-			http.Error(w, "could not load link", http.StatusInternalServerError)
+			writeError(c, http.StatusInternalServerError, "could not load link")
 			return
 		}
 		s.cache.Set(link)
 	}
 
 	if link.Disabled {
-		http.Error(w, "link disabled", http.StatusGone)
+		writeError(c, http.StatusGone, "link disabled")
 		return
 	}
 
@@ -166,26 +173,26 @@ func (s *Server) redirect(w http.ResponseWriter, r *http.Request) {
 	s.publisher.Publish(store.ClickEvent{
 		Code:      code,
 		ClickedAt: time.Now().UTC(),
-		Referrer:  truncate(r.Referer(), 512),
-		UserAgent: truncate(r.UserAgent(), 512),
-		IPHash:    hashIP(r),
+		Referrer:  truncate(c.Request.Referer(), 512),
+		UserAgent: truncate(c.Request.UserAgent(), 512),
+		IPHash:    hashIP(c.Request),
 	})
 
-	http.Redirect(w, r, link.LongURL, http.StatusFound)
+	c.Redirect(http.StatusFound, link.LongURL)
 }
 
-func (s *Server) shortURL(r *http.Request, code string) string {
+func (s *Server) shortURL(c *gin.Context, code string) string {
 	if s.baseURL != "" {
 		return s.baseURL + "/" + code
 	}
 	scheme := "http"
-	if r.TLS != nil {
+	if c.Request.TLS != nil {
 		scheme = "https"
 	}
-	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwarded != "" {
+	if forwarded := strings.TrimSpace(c.Request.Header.Get("X-Forwarded-Proto")); forwarded != "" {
 		scheme = forwarded
 	}
-	return scheme + "://" + r.Host + "/" + code
+	return scheme + "://" + c.Request.Host + "/" + code
 }
 
 func normalizeLongURL(raw string) (string, error) {
@@ -242,22 +249,6 @@ func truncate(value string, limit int) string {
 	return value[:limit]
 }
 
-func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(value); err != nil {
-		log.Printf("write json: %v", err)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
-}
-
-func withLogging(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
-	})
+func writeError(c *gin.Context, status int, message string) {
+	c.JSON(status, gin.H{"error": message})
 }
