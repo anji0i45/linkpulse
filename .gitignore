@@ -1,0 +1,17 @@
+# Local data
+data/
+
+# Go build output
+linkpulse
+linkpulse.exe
+*.exe
+*.test
+*.out
+
+# Local config
+.env
+.env.*
+
+# Editor files
+.vscode/
+.idea/

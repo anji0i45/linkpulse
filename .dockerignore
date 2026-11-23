@@ -1,0 +1,6 @@
+data/
+*.exe
+.git
+.gitignore
+README.md
+LEARN_HINGLISH.md
