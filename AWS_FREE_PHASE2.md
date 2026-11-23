@@ -14,6 +14,88 @@ serverless version described on the resume.
 
 ---
 
+## Can AWS be used without a card? (researched Nov 2026)
+
+**Technically yes, sometimes — but not without an AWS account.**
+
+AWS's current Free Tier FAQ says:
+
+> “No. A payment method isn't required to sign up for most new customers. In
+> some cases, we may request additional information, such as a payment method,
+> to verify your identity.”
+
+But AWS's sign-up documentation also says AWS *might* request payment
+information, and if it does, it may place a temporary $1 verification hold. So
+the free plan can work without a card, but **it is not guaranteed**. AWS may
+still ask for a card during verification.
+
+The new Free plan in 2026:
+
+- gives up to **$200 in credits**
+- lasts **6 months**, or until credits run out
+- gives access to a **limited set of services**
+- explicitly includes **Lambda, API Gateway, DynamoDB, SQS, OpenSearch,
+  ElastiCache, CloudWatch and IAM**
+- has **no charges unless you upgrade to Paid**
+- closes automatically after 6 months
+- still requires an AWS account (email/Google/GitHub/Apple login, name, contact
+  details)
+
+Official pages:
+
+- Free Tier FAQ: https://aws.amazon.com/free/free-tier-faqs/
+- New sign-up: https://docs.aws.amazon.com/accounts/latest/reference/sign-in-new.html
+- Free-plan supported services: https://docs.aws.amazon.com/accounts/latest/reference/supported-services-sign-up-new.html
+
+### What this means for LinkPulse
+
+| Rule | Can we do it? |
+|---|---|
+| No credit card, but AWS account is okay | **Maybe.** AWS Free plan often works without a card, but may ask for one |
+| No AWS account at all | **No real AWS deploy.** Use LocalStack or AWS Educate labs |
+| No paid service ever | **Yes,** if you stay inside the Free plan and never upgrade |
+| Permanent live AWS URL | **No.** Free plan closes after 6 months |
+
+The 6-month limit matters: if you deploy today and the account closes before an
+interview, the live link stops working. Take screenshots, keep the code on
+GitHub, and deploy closer to your interview period.
+
+### Free options without a card
+
+1. **AWS Free plan** — no card for many new users, but account required; card
+   may be requested for identity verification. Best if you want a real AWS
+   deployment.
+
+2. **AWS Educate** — free hands-on labs, **no credit card needed**, open to any
+   individual with an email. It is a learning lab, not a normal AWS account, so
+   it is good for practice but not for hosting a permanent public LinkPulse URL.
+   https://aws.amazon.com/education/awseducate/
+
+3. **LocalStack Hobby** — free AWS emulator, 30+ services, runs on your laptop.
+   No AWS account or bill, but it needs Docker. Lambda is included in the Hobby
+   plan. This is the best option if you refuse to create any AWS account.
+   https://localstack.cloud/pricing
+
+4. **DynamoDB Local / ExtendDB** — free local DynamoDB-compatible service, no
+   AWS account. Only covers DynamoDB, not the full stack.
+   https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html
+
+### Recommendation
+
+- **If you want real AWS on your resume:** create the AWS Free plan yourself
+  only if you are comfortable with an AWS account and possible card
+  verification. Do not share credentials with anyone. Deploy near your
+  interview period, because the Free plan expires after 6 months.
+- **If you want zero accounts and zero cards:** use LocalStack, but it needs
+  Docker. The current local Go MVP already runs without it.
+- **Do not claim “deployed on AWS”** until it is actually deployed. For now the
+  resume should say “extending to serverless AWS” or “AWS-compatible local
+  stack.” That is honest and still shows the skills.
+
+---
+
+---
+
 ## Target architecture
 
 ```text
