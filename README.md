@@ -112,7 +112,8 @@ linkpulse/
 │       └── file_test.go
 ├── data/                      # created automatically
 ├── README.md
-└── LEARN_HINGLISH.md          # simple explanation of every concept
+├── LEARN_HINGLISH.md          # simple explanation of every concept
+└── AWS_FREE_PHASE2.md         # free-tier deployment plan
 ```
 
 ## Why this is a good resume project
