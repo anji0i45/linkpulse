@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -118,6 +119,53 @@ func TestCreateListRedirectAndAnalytics(t *testing.T) {
 	}
 	if !strings.Contains(analyticsRecorder.Body.String(), "news.ycombinator.com") {
 		t.Fatalf("analytics body missing referrer: %s", analyticsRecorder.Body.String())
+	}
+}
+
+func TestGraphQLAnalytics(t *testing.T) {
+	handler, st, _ := newTestServer(t)
+
+	link, err := st.CreateLink(context.Background(), "https://example.com/graphql")
+	if err != nil {
+		t.Fatalf("CreateLink: %v", err)
+	}
+	if err := st.RecordClick(context.Background(), store.ClickEvent{
+		Code:      link.Code,
+		ClickedAt: time.Date(2026, 11, 24, 9, 0, 0, 0, time.UTC),
+		Referrer:  "https://google.com/search",
+		UserAgent: "test",
+		IPHash:    "visitor-1",
+	}); err != nil {
+		t.Fatalf("RecordClick: %v", err)
+	}
+
+	query := fmt.Sprintf(`{
+		links { code longUrl clicks }
+		analytics(code: %q) {
+			totalClicks
+			uniqueClicks
+			clicksByDay { day clicks }
+			topReferrers { name clicks }
+		}
+	}`, link.Code)
+	body, err := json.Marshal(map[string]string{"query": query})
+	if err != nil {
+		t.Fatalf("marshal query: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/graphql", strings.NewReader(string(body)))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("graphql status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	response := recorder.Body.String()
+	for _, want := range []string{link.Code, "totalClicks", "uniqueClicks", "google.com"} {
+		if !strings.Contains(response, want) {
+			t.Fatalf("graphql response missing %q: %s", want, response)
+		}
 	}
 }
 

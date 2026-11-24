@@ -63,6 +63,10 @@ func NewServer(st store.Store, linkCache cache.LinkCache, publisher queue.Publis
 	router.GET("/api/links", s.listLinks)
 	router.GET("/api/analytics/:code", s.analytics)
 
+	graphQLHandler := newGraphQLHandler(st)
+	router.GET("/graphql", gin.WrapH(graphQLHandler))
+	router.POST("/graphql", gin.WrapH(graphQLHandler))
+
 	// Short links are handled by NoRoute so Gin does not have to mix a
 	// root-level wildcard with the /api routes.
 	router.NoRoute(s.redirect)

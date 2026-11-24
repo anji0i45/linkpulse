@@ -23,6 +23,7 @@ but Go — no AWS account, no Docker, no database server, no paid service.
 - Persist links and clicks in a local JSON file
 - Cache hot links in memory for fast redirects
 - Dashboard at `http://localhost:8080`
+- GraphQL analytics endpoint at `http://localhost:8080/graphql`
 - No external services; Gin is the only web framework dependency
 
 ## Quick start
@@ -83,6 +84,20 @@ Health:
 curl.exe http://localhost:8080/healthz
 ```
 
+GraphQL:
+
+```powershell
+curl.exe -X POST http://localhost:8080/graphql ^
+  -H "Content-Type: application/json" ^
+  -d "{\"query\":\"{ links { code longUrl clicks } }\"}"
+```
+
+Open GraphiQL in the browser:
+
+```text
+http://localhost:8080/graphql
+```
+
 ## Configuration
 
 | Variable | Default | Meaning |
@@ -105,7 +120,8 @@ linkpulse/
 ├── main.go                    # starts store, cache, queue and HTTP server
 ├── internal/
 │   ├── api/
-│   │   ├── api.go             # REST handlers + redirect + analytics
+│   │   ├── api.go             # Gin REST handlers + redirect + analytics
+│   │   ├── graphql.go         # GraphQL schema + resolvers
 │   │   └── web/index.html     # dashboard
 │   ├── cache/
 │   │   └── cache.go           # in-memory TTL cache
@@ -132,6 +148,7 @@ The local MVP proves the core backend flow:
 - Caching
 - Async click processing
 - Analytics aggregation
+- GraphQL analytics API
 - Tests
 
 The next phase replaces the local edges with managed AWS services:

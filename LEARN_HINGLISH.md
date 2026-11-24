@@ -30,9 +30,9 @@ Local MVP ready hai:
   - per-link analytics
   - clicks by day
   - top referrers
+- GraphQL analytics API
 - Tests
-- Zero paid services
-- Zero external dependencies
+- Zero paid services; no cloud accounts
 
 **Abhi AWS version nahi bana.** Abhi sab kuch local computer par chal raha hai.
 Resume me isliye `(In Progress)` likha hai.
@@ -152,7 +152,8 @@ linkpulse/
 ├── main.go                  # sab kuch connect karta hai
 ├── internal/
 │   ├── api/
-│   │   ├── api.go           # HTTP API + redirect + analytics endpoints
+│   │   ├── api.go           # Gin HTTP API + redirect + analytics endpoints
+│   │   ├── graphql.go       # GraphQL schema + resolvers
 │   │   └── web/index.html   # dashboard
 │   ├── cache/cache.go       # in-memory TTL cache
 │   ├── queue/queue.go       # in-process click queue
@@ -286,7 +287,8 @@ aur aggregation ho sake.
 
 ### GraphQL
 
-Dashboard ke liye query API. Client exact data maangta hai:
+Dashboard ke liye query API. Client exact data maangta hai. Ye local MVP me
+`/graphql` par implemented hai:
 
 ```graphql
 {
@@ -324,7 +326,7 @@ me zarurat nahi, AWS version me useful hai.
 | Queue | Go channel | SQS |
 | Click storage | JSON file | MongoDB Atlas free tier |
 | Search/analytics | In-memory aggregation | OpenSearch/Elasticsearch |
-| Dashboard API | REST | REST + GraphQL |
+| Dashboard API | REST + GraphQL | REST + GraphQL |
 | Internal API | Same Go functions | gRPC |
 | Infra | Manual | Terraform |
 | Cost | ₹0 | Free tier only, with billing alerts |
@@ -395,9 +397,10 @@ Go HTTP server ko Lambda handler me wrap karo. API Gateway routes banao.
 Click events MongoDB me save karo. Elasticsearch me index karo. Analytics query
 Elasticsearch se lao.
 
-### Day 6 — GraphQL + gRPC
+### Day 6 — gRPC
 
-GraphQL dashboard API banao. Internal gRPC `LinkService` banao.
+GraphQL dashboard API local MVP me already done hai. Ab internal gRPC
+`LinkService` banao.
 
 ### Day 7 — Terraform + load test
 
@@ -415,10 +418,10 @@ Agar interviewer poochhe:
 Tum safe answer ye de sakte ho:
 
 > “Main pehle ek basic Go URL shortener banaya tha. Ab usko LinkPulse me extend
-> kar raha hoon. Local version me Go REST API, JSON persistence, in-memory cache
-> aur async click queue hai. Dashboard clicks by day aur referrers dikhata hai.
-> Next phase me same interfaces ko DynamoDB, SQS, Lambda, MongoDB Atlas aur
-> Elasticsearch se replace kar raha hoon.”
+> kar raha hoon. Local version me Go + Gin REST API, GraphQL analytics API,
+> JSON persistence, in-memory cache aur async click queue hai. Dashboard clicks
+> by day aur referrers dikhata hai. Next phase me same interfaces ko DynamoDB,
+> SQS, Lambda, MongoDB Atlas aur Elasticsearch se replace kar raha hoon.”
 
 Agar interviewer poochhe:
 
