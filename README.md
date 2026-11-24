@@ -171,7 +171,7 @@ piece, not just a tutorial.
 - One process only; the JSON file is not a multi-instance database.
 - The click queue is in memory, so events can be lost if the process crashes.
 - No login, rate limiting, or link expiry yet.
-- AWS, GraphQL, gRPC, and Terraform are Phase 2, not completed yet.
+- AWS, gRPC, and Terraform are Phase 2, not completed yet.
 
 These are intentional. The goal is to understand the flow first, then replace
 each local piece with a managed service.
