@@ -65,7 +65,7 @@ func NewFileStore(path string) (*FileStore, error) {
 	return s, nil
 }
 
-func (s *FileStore) CreateLink(ctx context.Context, longURL string) (Link, error) {
+func (s *FileStore) CreateLink(ctx context.Context, input CreateLinkInput) (Link, error) {
 	if err := ctx.Err(); err != nil {
 		return Link{}, err
 	}
@@ -73,29 +73,85 @@ func (s *FileStore) CreateLink(ctx context.Context, longURL string) (Link, error
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for attempt := 0; attempt < 10; attempt++ {
-		code, err := randomCode(7)
-		if err != nil {
-			return Link{}, err
+	if input.Code != "" {
+		if _, exists := s.data.Links[input.Code]; exists {
+			return Link{}, ErrCodeExists
 		}
-		if _, exists := s.data.Links[code]; exists {
-			continue
-		}
-
-		link := Link{
-			Code:      code,
-			LongURL:   longURL,
-			CreatedAt: time.Now().UTC(),
-		}
-		s.data.Links[code] = link
-		if err := s.saveLocked(); err != nil {
-			delete(s.data.Links, code)
-			return Link{}, err
-		}
-		return link, nil
 	}
 
-	return Link{}, errors.New("could not generate a unique short code")
+	code := input.Code
+	if code == "" {
+		for attempt := 0; attempt < 10; attempt++ {
+			generated, err := randomCode(7)
+			if err != nil {
+				return Link{}, err
+			}
+			if _, exists := s.data.Links[generated]; exists {
+				continue
+			}
+			code = generated
+			break
+		}
+	}
+	if code == "" {
+		return Link{}, errors.New("could not generate a unique short code")
+	}
+
+	link := Link{
+		Code:      code,
+		LongURL:   input.LongURL,
+		CreatedAt: time.Now().UTC(),
+		ExpiresAt: input.ExpiresAt,
+	}
+	s.data.Links[code] = link
+	if err := s.saveLocked(); err != nil {
+		delete(s.data.Links, code)
+		return Link{}, err
+	}
+	return link, nil
+}
+
+func (s *FileStore) UpdateLink(ctx context.Context, code string, disabled bool) (Link, error) {
+	if err := ctx.Err(); err != nil {
+		return Link{}, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	link, ok := s.data.Links[code]
+	if !ok {
+		return Link{}, ErrNotFound
+	}
+	link.Disabled = disabled
+	s.data.Links[code] = link
+	if err := s.saveLocked(); err != nil {
+		return Link{}, err
+	}
+	return link, nil
+}
+
+func (s *FileStore) DeleteLink(ctx context.Context, code string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.data.Links[code]; !ok {
+		return ErrNotFound
+	}
+	delete(s.data.Links, code)
+
+	clicks := s.data.Clicks[:0]
+	for _, event := range s.data.Clicks {
+		if event.Code != code {
+			clicks = append(clicks, event)
+		}
+	}
+	s.data.Clicks = clicks
+	return s.saveLocked()
 }
 
 func (s *FileStore) GetLink(ctx context.Context, code string) (Link, error) {

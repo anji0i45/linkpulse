@@ -20,6 +20,10 @@ Ye koi naya app nahi hai. Ye tumhare basic URL shortener ka **advanced version**
 Local MVP ready hai:
 
 - Long URL se short link banana
+- Custom alias banana — jaise `/summer-sale`
+- Link expiry set karna
+- Link enable / disable / delete karna
+- Har active link ka QR code
 - Short link open karne par original website par redirect
 - Har click ko queue me daalna
 - Clicks ko local JSON file me save karna
@@ -30,6 +34,7 @@ Local MVP ready hai:
   - per-link analytics
   - clicks by day
   - top referrers
+  - search aur status filter
 - GraphQL analytics API
 - Tests
 - Zero paid services; no cloud accounts
@@ -104,6 +109,18 @@ Bas. AWS, Lambda, Elasticsearch user ko dikhta hi nahi. Wo sab peeche hota hai.
 
 **Yaad rakho:** URL shortener product ka excuse hai. Asli skill backend engineering hai.
 
+### LinkPulse me advanced product features
+
+- **Custom alias** — user apna short code chun sakta hai, jaise `/summer-sale`.
+- **Expiry** — link ek fixed time ke baad band ho jata hai.
+- **Enable / disable** — link ko temporary band ya wapas active kar sakte ho.
+- **Delete** — link aur uske clicks permanently remove.
+- **QR code** — har active link ka QR PNG `/api/qr/<code>` se milta hai.
+- **Search/filter** — dashboard me code ya URL se search, aur active/expired/disabled filter.
+- **GraphQL** — analytics ko flexible query se read kar sakte ho.
+
+Ye features product ko simple tutorial se real SaaS jaisa banate hain.
+
 ---
 
 ## 6. Request flow
@@ -154,7 +171,9 @@ linkpulse/
 │   ├── api/
 │   │   ├── api.go           # Gin HTTP API + redirect + analytics endpoints
 │   │   ├── graphql.go       # GraphQL schema + resolvers
-│   │   └── web/index.html   # dashboard
+│   │   └── web/
+│   │       ├── index.html   # dashboard
+│   │       └── app.js       # link management + analytics UI
 │   ├── cache/cache.go       # in-memory TTL cache
 │   ├── queue/queue.go       # in-process click queue
 │   └── store/
@@ -419,9 +438,11 @@ Tum safe answer ye de sakte ho:
 
 > “Main pehle ek basic Go URL shortener banaya tha. Ab usko LinkPulse me extend
 > kar raha hoon. Local version me Go + Gin REST API, GraphQL analytics API,
-> JSON persistence, in-memory cache aur async click queue hai. Dashboard clicks
-> by day aur referrers dikhata hai. Next phase me same interfaces ko DynamoDB,
-> SQS, Lambda, MongoDB Atlas aur Elasticsearch se replace kar raha hoon.”
+> JSON persistence, in-memory cache aur async click queue hai. Custom alias,
+> expiry, enable/disable/delete, QR code aur dashboard search bhi hai. Dashboard
+> clicks by day aur referrers dikhata hai. Next phase me same interfaces ko
+> DynamoDB, SQS, Lambda, MongoDB Atlas aur Elasticsearch se replace kar raha
+> hoon.”
 
 Agar interviewer poochhe:
 

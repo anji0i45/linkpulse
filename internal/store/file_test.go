@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -17,7 +18,7 @@ func TestFileStoreLifecycle(t *testing.T) {
 		t.Fatalf("NewFileStore: %v", err)
 	}
 
-	link, err := st.CreateLink(ctx, "https://example.com/a/long/path")
+	link, err := st.CreateLink(ctx, CreateLinkInput{LongURL: "https://example.com/a/long/path"})
 	if err != nil {
 		t.Fatalf("CreateLink: %v", err)
 	}
@@ -83,6 +84,59 @@ func TestFileStoreLifecycle(t *testing.T) {
 	}
 	if len(reloadedLinks) != 1 || reloadedLinks[0].Clicks != 3 {
 		t.Fatalf("reloaded links = %+v, want one link with 3 clicks", reloadedLinks)
+	}
+}
+
+func TestFileStoreCustomCodeUpdateDelete(t *testing.T) {
+	ctx := context.Background()
+	st, err := NewFileStore(filepath.Join(t.TempDir(), "linkpulse.json"))
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	link, err := st.CreateLink(ctx, CreateLinkInput{
+		LongURL:   "https://example.com/custom",
+		Code:      "summer-sale",
+		ExpiresAt: &expiresAt,
+	})
+	if err != nil {
+		t.Fatalf("CreateLink custom: %v", err)
+	}
+	if link.Code != "summer-sale" || link.ExpiresAt == nil {
+		t.Fatalf("unexpected custom link: %+v", link)
+	}
+
+	if _, err := st.CreateLink(ctx, CreateLinkInput{
+		LongURL: "https://example.com/duplicate",
+		Code:    "summer-sale",
+	}); !errors.Is(err, ErrCodeExists) {
+		t.Fatalf("duplicate code error = %v, want ErrCodeExists", err)
+	}
+
+	updated, err := st.UpdateLink(ctx, link.Code, true)
+	if err != nil {
+		t.Fatalf("UpdateLink: %v", err)
+	}
+	if !updated.Disabled {
+		t.Fatal("link should be disabled")
+	}
+
+	if err := st.RecordClick(ctx, ClickEvent{Code: link.Code, ClickedAt: time.Now().UTC(), IPHash: "x"}); err != nil {
+		t.Fatalf("RecordClick: %v", err)
+	}
+	if err := st.DeleteLink(ctx, link.Code); err != nil {
+		t.Fatalf("DeleteLink: %v", err)
+	}
+	if _, err := st.GetLink(ctx, link.Code); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetLink after delete = %v, want ErrNotFound", err)
+	}
+	links, err := st.ListLinks(ctx)
+	if err != nil {
+		t.Fatalf("ListLinks: %v", err)
+	}
+	if len(links) != 0 {
+		t.Fatalf("links after delete = %+v, want empty", links)
 	}
 }
 

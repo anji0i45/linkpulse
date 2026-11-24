@@ -41,6 +41,22 @@ func newGraphQLHandler(st store.Store) http.Handler {
 					return p.Source.(store.LinkSummary).Clicks, nil
 				},
 			},
+			"disabled": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.Boolean),
+				Resolve: func(p graphql.ResolveParams) (any, error) {
+					return p.Source.(store.LinkSummary).Disabled, nil
+				},
+			},
+			"expiresAt": &graphql.Field{
+				Type: graphql.String,
+				Resolve: func(p graphql.ResolveParams) (any, error) {
+					link := p.Source.(store.LinkSummary)
+					if link.ExpiresAt == nil {
+						return nil, nil
+					}
+					return link.ExpiresAt.Format(time.RFC3339), nil
+				},
+			},
 		},
 	})
 

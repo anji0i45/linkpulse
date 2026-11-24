@@ -9,12 +9,24 @@ import (
 // ErrNotFound is returned when a short code does not exist.
 var ErrNotFound = errors.New("link not found")
 
+// ErrCodeExists is returned when a custom short code is already taken.
+var ErrCodeExists = errors.New("short code already exists")
+
 // Link is one short link created by a user.
 type Link struct {
-	Code      string    `json:"code"`
-	LongURL   string    `json:"long_url"`
-	CreatedAt time.Time `json:"created_at"`
-	Disabled  bool      `json:"disabled"`
+	Code      string     `json:"code"`
+	LongURL   string     `json:"long_url"`
+	CreatedAt time.Time  `json:"created_at"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	Disabled  bool       `json:"disabled"`
+}
+
+// CreateLinkInput is used by the API to create either a generated or custom
+// short code with an optional expiry time.
+type CreateLinkInput struct {
+	LongURL   string
+	Code      string
+	ExpiresAt *time.Time
 }
 
 // ClickEvent is one redirect that happened through a short link.
@@ -55,10 +67,12 @@ type Analytics struct {
 }
 
 // Store is the persistence boundary. The local version uses a JSON file.
-// The AWS version can implement the same interface with DynamoDB and MongoDB.
+// The AWS version can implement the same interface with DynamoDB.
 type Store interface {
-	CreateLink(ctx context.Context, longURL string) (Link, error)
+	CreateLink(ctx context.Context, input CreateLinkInput) (Link, error)
 	GetLink(ctx context.Context, code string) (Link, error)
+	UpdateLink(ctx context.Context, code string, disabled bool) (Link, error)
+	DeleteLink(ctx context.Context, code string) error
 	RecordClick(ctx context.Context, event ClickEvent) error
 	ListLinks(ctx context.Context) ([]LinkSummary, error)
 	GetAnalytics(ctx context.Context, code string) (Analytics, error)

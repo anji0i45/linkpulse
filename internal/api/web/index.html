@@ -230,6 +230,95 @@
       font-size: 0.83rem;
     }
 
+    .options-row {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .field label {
+      margin-bottom: 6px;
+      font-size: 0.72rem;
+    }
+
+    select {
+      width: 100%;
+      height: 48px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      color: var(--ink);
+      background: #fbfcff;
+      font: inherit;
+      outline: none;
+    }
+
+    select:focus {
+      border-color: #8fa8ff;
+      box-shadow: 0 0 0 4px rgba(36, 87, 245, 0.10);
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin-bottom: 14px;
+    }
+
+    .toolbar input,
+    .toolbar select {
+      height: 40px;
+      flex: 1;
+      min-width: 150px;
+    }
+
+    .link-title {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 3px;
+    }
+
+    .link-detail {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 0.69rem;
+      font-weight: 850;
+      letter-spacing: 0.02em;
+      text-transform: capitalize;
+    }
+
+    .status-active { color: #08766b; background: #e3fbf5; }
+    .status-expired { color: #975a16; background: #fff4df; }
+    .status-disabled { color: #9f1d18; background: #fff0ef; }
+
+    .link-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 7px;
+    }
+
+    .ghost.danger { color: var(--danger); background: #fff0ef; }
+    .ghost.danger:hover { background: #ffe1df; }
+
+    a.ghost {
+      display: inline-flex;
+      align-items: center;
+      text-decoration: none;
+    }
+
     .error {
       margin-top: 12px;
       padding: 11px 13px;
@@ -479,6 +568,7 @@
       .hero { padding: 24px 20px; border-radius: 20px; }
       .input-row { flex-direction: column; }
       .primary { width: 100%; }
+      .options-row { grid-template-columns: 1fr; }
       .stats, .charts { grid-template-columns: 1fr; }
       .link-row { align-items: flex-start; flex-direction: column; }
       .link-meta { width: 100%; justify-content: space-between; }
@@ -510,7 +600,23 @@
             <input id="long-url" type="url" placeholder="https://example.com/a/very/long/link" autocomplete="off" required>
             <button class="primary" id="shorten-btn" type="submit">Shorten</button>
           </div>
-          <p class="hint">No sign-up needed. Data stays in a local JSON file for this MVP.</p>
+          <div class="options-row">
+            <div class="field">
+              <label for="custom-code">Custom alias (optional)</label>
+              <input id="custom-code" type="text" placeholder="summer-sale" autocomplete="off" maxlength="32">
+            </div>
+            <div class="field">
+              <label for="expiry">Expires</label>
+              <select id="expiry">
+                <option value="">Never</option>
+                <option value="1">1 hour</option>
+                <option value="24">1 day</option>
+                <option value="168">7 days</option>
+                <option value="720">30 days</option>
+              </select>
+            </div>
+          </div>
+          <p class="hint">No sign-up needed. Custom alias and expiry are optional. Data stays in a local JSON file.</p>
           <div id="error" class="error" hidden></div>
         </form>
 
@@ -518,7 +624,10 @@
           <div class="result-label">Your short link</div>
           <div class="result-row">
             <a id="short-link" href="#" target="_blank" rel="noopener"></a>
-            <button id="copy-btn" class="ghost" type="button">Copy</button>
+            <div class="link-actions">
+              <button id="copy-btn" class="ghost" type="button">Copy</button>
+              <a id="qr-link" class="ghost" href="#" target="_blank" rel="noopener">QR code</a>
+            </div>
           </div>
         </div>
       </section>
@@ -533,6 +642,15 @@
         <div class="section-head">
           <h2>Your links</h2>
           <button id="refresh-btn" class="ghost" type="button">Refresh</button>
+        </div>
+        <div class="toolbar">
+          <input id="search-input" type="text" placeholder="Search by code or URL…" autocomplete="off">
+          <select id="status-filter">
+            <option value="all">All links</option>
+            <option value="active">Active</option>
+            <option value="expired">Expired</option>
+            <option value="disabled">Disabled</option>
+          </select>
         </div>
         <div id="links" class="links">
           <div class="empty">Loading links…</div>
@@ -570,232 +688,6 @@
     <footer>LinkPulse — local learning project. No external services, no paid dependencies.</footer>
   </div>
 
-  <script>
-    const state = { links: [] };
-    const byId = (id) => document.getElementById(id);
-    const number = new Intl.NumberFormat();
-
-    function setError(message) {
-      const box = byId("error");
-      box.textContent = message;
-      box.hidden = false;
-    }
-
-    function clearError() {
-      byId("error").hidden = true;
-    }
-
-    async function request(path, options) {
-      const response = await fetch(path, options);
-      let body = {};
-      try {
-        body = await response.json();
-      } catch (_) {
-        // Keep the status-based error below.
-      }
-      if (!response.ok) {
-        throw new Error(body.error || "Request failed (" + response.status + ")");
-      }
-      return body;
-    }
-
-    function shortURL(code) {
-      return window.location.origin + "/" + code;
-    }
-
-    function renderLinks(links) {
-      const container = byId("links");
-      container.replaceChildren();
-
-      if (!links.length) {
-        const empty = document.createElement("div");
-        empty.className = "empty";
-        empty.textContent = "No links yet. Paste a long URL above to create your first one.";
-        container.append(empty);
-        return;
-      }
-
-      for (const link of links) {
-        const row = document.createElement("div");
-        row.className = "link-row";
-
-        const main = document.createElement("div");
-        main.className = "link-main";
-
-        const code = document.createElement("a");
-        code.className = "link-code";
-        code.href = shortURL(link.code);
-        code.target = "_blank";
-        code.rel = "noopener";
-        code.textContent = shortURL(link.code);
-
-        const url = document.createElement("span");
-        url.className = "link-url";
-        url.textContent = link.long_url;
-        url.title = link.long_url;
-
-        main.append(code, url);
-
-        const meta = document.createElement("div");
-        meta.className = "link-meta";
-
-        const clicks = document.createElement("span");
-        clicks.className = "clicks";
-        clicks.textContent = number.format(link.clicks) + " clicks";
-
-        const view = document.createElement("button");
-        view.type = "button";
-        view.className = "ghost";
-        view.textContent = "Analytics";
-        view.addEventListener("click", () => openAnalytics(link.code));
-
-        meta.append(clicks, view);
-        row.append(main, meta);
-        container.append(row);
-      }
-    }
-
-    async function loadLinks() {
-      try {
-        const data = await request("/api/links");
-        state.links = data.links || [];
-        renderLinks(state.links);
-
-        const totalClicks = state.links.reduce((sum, link) => sum + link.clicks, 0);
-        byId("total-links").textContent = number.format(state.links.length);
-        byId("total-clicks").textContent = number.format(totalClicks);
-
-        const top = [...state.links].sort((a, b) => b.clicks - a.clicks)[0];
-        byId("top-link").textContent = top && top.clicks ? "/" + top.code : "—";
-      } catch (error) {
-        setError(error.message);
-        byId("links").replaceChildren();
-        const empty = document.createElement("div");
-        empty.className = "empty";
-        empty.textContent = "Could not load links. Is the server running?";
-        byId("links").append(empty);
-      }
-    }
-
-    byId("create-form").addEventListener("submit", async (event) => {
-      event.preventDefault();
-      clearError();
-
-      const input = byId("long-url");
-      const button = byId("shorten-btn");
-      const value = input.value.trim();
-      if (!value) {
-        setError("Please paste a URL first.");
-        input.focus();
-        return;
-      }
-
-      button.disabled = true;
-      button.textContent = "Creating…";
-
-      try {
-        const data = await request("/api/links", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ long_url: value }),
-        });
-
-        const shortLink = byId("short-link");
-        shortLink.href = data.short_url;
-        shortLink.textContent = data.short_url;
-        byId("result").hidden = false;
-        input.value = "";
-        await loadLinks();
-      } catch (error) {
-        setError(error.message);
-      } finally {
-        button.disabled = false;
-        button.textContent = "Shorten";
-      }
-    });
-
-    byId("copy-btn").addEventListener("click", async () => {
-      const text = byId("short-link").textContent;
-      try {
-        await navigator.clipboard.writeText(text);
-      } catch (_) {
-        const area = document.createElement("textarea");
-        area.value = text;
-        document.body.append(area);
-        area.select();
-        document.execCommand("copy");
-        area.remove();
-      }
-      const button = byId("copy-btn");
-      button.textContent = "Copied!";
-      window.setTimeout(() => { button.textContent = "Copy"; }, 1400);
-    });
-
-    byId("refresh-btn").addEventListener("click", loadLinks);
-
-    function renderBars(container, items, labelKey, valueKey) {
-      container.replaceChildren();
-      if (!items || !items.length) {
-        const empty = document.createElement("div");
-        empty.className = "empty";
-        empty.textContent = "No data yet.";
-        container.append(empty);
-        return;
-      }
-
-      const max = Math.max(...items.map((item) => Number(item[valueKey]) || 0), 1);
-      for (const item of items) {
-        const row = document.createElement("div");
-        row.className = "bar-row";
-
-        const label = document.createElement("span");
-        label.className = "bar-label";
-        label.textContent = item[labelKey];
-        label.title = item[labelKey];
-
-        const track = document.createElement("div");
-        track.className = "bar-track";
-
-        const fill = document.createElement("div");
-        fill.className = "bar-fill";
-        fill.style.width = Math.max(3, (Number(item[valueKey]) / max) * 100) + "%";
-        track.append(fill);
-
-        const value = document.createElement("span");
-        value.className = "bar-value";
-        value.textContent = number.format(item[valueKey]);
-
-        row.append(label, track, value);
-        container.append(row);
-      }
-    }
-
-    async function openAnalytics(code) {
-      const panel = byId("analytics-panel");
-      panel.hidden = false;
-      byId("analytics-title").textContent = "/" + code;
-      byId("day-chart").replaceChildren();
-      byId("referrer-chart").replaceChildren();
-
-      try {
-        const data = await request("/api/analytics/" + encodeURIComponent(code));
-        byId("analytics-url").textContent = data.long_url;
-        byId("analytics-total").textContent = number.format(data.total_clicks);
-        byId("analytics-unique").textContent = number.format(data.unique_clicks);
-        renderBars(byId("day-chart"), data.clicks_by_day || [], "day", "clicks");
-        renderBars(byId("referrer-chart"), data.top_referrers || [], "name", "clicks");
-      } catch (error) {
-        setError(error.message);
-      }
-
-      panel.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-
-    byId("close-analytics").addEventListener("click", () => {
-      byId("analytics-panel").hidden = true;
-    });
-
-    loadLinks();
-  </script>
+  <script src="/app.js" defer></script>
 </body>
 </html>

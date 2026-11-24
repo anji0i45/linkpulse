@@ -16,10 +16,15 @@ but Go — no AWS account, no Docker, no database server, no paid service.
 ## What works right now
 
 - Create a short link from a long URL
+- Custom alias, for example `/summer-sale`
+- Optional link expiry
+- Enable, disable and delete links
+- Downloadable QR code for every active link
 - Redirect through the short code
 - Track every click asynchronously through an in-process event queue
 - Show total clicks and unique visitors
 - Show clicks by day and top referrers
+- Search and filter links by status
 - Persist links and clicks in a local JSON file
 - Cache hot links in memory for fast redirects
 - Dashboard at `http://localhost:8080`
@@ -60,6 +65,19 @@ curl.exe -X POST http://localhost:8080/api/links ^
   -d "{\"long_url\":\"https://example.com/a/long/path\"}"
 ```
 
+Custom alias + expiry:
+
+```powershell
+$body = @{
+  long_url = "https://example.com/sale"
+  custom_code = "summer-sale"
+  expires_at = (Get-Date).ToUniversalTime().AddDays(7).ToString("yyyy-MM-ddTHH:mm:ssZ")
+} | ConvertTo-Json
+curl.exe -X POST http://localhost:8080/api/links ^
+  -H "Content-Type: application/json" ^
+  -d $body
+```
+
 List links:
 
 ```powershell
@@ -70,6 +88,26 @@ View analytics:
 
 ```powershell
 curl.exe http://localhost:8080/api/analytics/CODE
+```
+
+Disable or enable a link:
+
+```powershell
+curl.exe -X PATCH http://localhost:8080/api/links/CODE ^
+  -H "Content-Type: application/json" ^
+  -d "{\"disabled\":true}"
+```
+
+Delete a link:
+
+```powershell
+curl.exe -X DELETE http://localhost:8080/api/links/CODE
+```
+
+QR code:
+
+```powershell
+curl.exe -o linkpulse-qr.png http://localhost:8080/api/qr/CODE
 ```
 
 Redirect:
@@ -122,7 +160,9 @@ linkpulse/
 │   ├── api/
 │   │   ├── api.go             # Gin REST handlers + redirect + analytics
 │   │   ├── graphql.go         # GraphQL schema + resolvers
-│   │   └── web/index.html     # dashboard
+│   │   └── web/
+│   │       ├── index.html     # dashboard
+│   │       └── app.js         # link management + analytics UI
 │   ├── cache/
 │   │   └── cache.go           # in-memory TTL cache
 │   ├── queue/
@@ -142,12 +182,15 @@ linkpulse/
 The local MVP proves the core backend flow:
 
 - Go + Gin REST APIs
-- URL validation
+- URL validation and custom short codes
+- Link lifecycle: expiry, disable, enable and delete
+- QR code generation
 - Redirects
 - Persistence
 - Caching
 - Async click processing
 - Analytics aggregation
+- Search and filters in the dashboard
 - GraphQL analytics API
 - Tests
 
@@ -170,7 +213,7 @@ piece, not just a tutorial.
 
 - One process only; the JSON file is not a multi-instance database.
 - The click queue is in memory, so events can be lost if the process crashes.
-- No login, rate limiting, or link expiry yet.
+- No login or rate limiting yet.
 - AWS, gRPC, and Terraform are Phase 2, not completed yet.
 
 These are intentional. The goal is to understand the flow first, then replace

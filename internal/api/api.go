@@ -14,13 +14,14 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/skip2/go-qrcode"
 
 	"linkpulse/internal/cache"
 	"linkpulse/internal/queue"
 	"linkpulse/internal/store"
 )
 
-//go:embed web/index.html
+//go:embed web/index.html web/app.js
 var dashboardFS embed.FS
 
 type Server struct {
@@ -31,14 +32,21 @@ type Server struct {
 }
 
 type createLinkRequest struct {
-	LongURL string `json:"long_url"`
+	LongURL    string `json:"long_url"`
+	CustomCode string `json:"custom_code"`
+	ExpiresAt  string `json:"expires_at"`
 }
 
 type createLinkResponse struct {
-	Code      string    `json:"code"`
-	ShortURL  string    `json:"short_url"`
-	LongURL   string    `json:"long_url"`
-	CreatedAt time.Time `json:"created_at"`
+	Code      string     `json:"code"`
+	ShortURL  string     `json:"short_url"`
+	LongURL   string     `json:"long_url"`
+	CreatedAt time.Time  `json:"created_at"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}
+
+type updateLinkRequest struct {
+	Disabled *bool `json:"disabled"`
 }
 
 func NewServer(st store.Store, linkCache cache.LinkCache, publisher queue.Publisher, baseURL string) http.Handler {
@@ -55,13 +63,17 @@ func NewServer(st store.Store, linkCache cache.LinkCache, publisher queue.Publis
 	router.Use(gin.Logger(), gin.Recovery())
 
 	router.GET("/", s.dashboard)
+	router.GET("/app.js", s.appJS)
 	router.GET("/favicon.ico", func(c *gin.Context) {
 		c.Status(http.StatusNoContent)
 	})
 	router.GET("/healthz", s.health)
 	router.POST("/api/links", s.createLink)
 	router.GET("/api/links", s.listLinks)
+	router.PATCH("/api/links/:code", s.updateLink)
+	router.DELETE("/api/links/:code", s.deleteLink)
 	router.GET("/api/analytics/:code", s.analytics)
+	router.GET("/api/qr/:code", s.qrCode)
 
 	graphQLHandler := newGraphQLHandler(st)
 	router.GET("/graphql", gin.WrapH(graphQLHandler))
@@ -84,6 +96,16 @@ func (s *Server) dashboard(c *gin.Context) {
 	c.Data(http.StatusOK, "text/html; charset=utf-8", page)
 }
 
+func (s *Server) appJS(c *gin.Context) {
+	script, err := dashboardFS.ReadFile("web/app.js")
+	if err != nil {
+		c.String(http.StatusInternalServerError, "dashboard script unavailable")
+		return
+	}
+	c.Header("Cache-Control", "no-cache")
+	c.Data(http.StatusOK, "application/javascript; charset=utf-8", script)
+}
+
 func (s *Server) health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
@@ -103,7 +125,42 @@ func (s *Server) createLink(c *gin.Context) {
 		return
 	}
 
-	link, err := s.store.CreateLink(c.Request.Context(), longURL)
+	customCode := strings.TrimSpace(request.CustomCode)
+	if customCode != "" {
+		if !validCode(customCode) {
+			writeError(c, http.StatusBadRequest, "custom_code must be 3-32 letters, numbers, hyphens or underscores")
+			return
+		}
+		if reservedCode(customCode) {
+			writeError(c, http.StatusBadRequest, "custom_code is reserved")
+			return
+		}
+	}
+
+	var expiresAt *time.Time
+	if strings.TrimSpace(request.ExpiresAt) != "" {
+		parsed, err := time.Parse(time.RFC3339, request.ExpiresAt)
+		if err != nil {
+			writeError(c, http.StatusBadRequest, "expires_at must be an RFC3339 timestamp")
+			return
+		}
+		if !parsed.After(time.Now()) {
+			writeError(c, http.StatusBadRequest, "expires_at must be in the future")
+			return
+		}
+		parsed = parsed.UTC()
+		expiresAt = &parsed
+	}
+
+	link, err := s.store.CreateLink(c.Request.Context(), store.CreateLinkInput{
+		LongURL:   longURL,
+		Code:      customCode,
+		ExpiresAt: expiresAt,
+	})
+	if errors.Is(err, store.ErrCodeExists) {
+		writeError(c, http.StatusConflict, "custom_code is already taken")
+		return
+	}
 	if err != nil {
 		log.Printf("create link: %v", err)
 		writeError(c, http.StatusInternalServerError, "could not create link")
@@ -116,7 +173,94 @@ func (s *Server) createLink(c *gin.Context) {
 		ShortURL:  s.shortURL(c, link.Code),
 		LongURL:   link.LongURL,
 		CreatedAt: link.CreatedAt,
+		ExpiresAt: link.ExpiresAt,
 	})
+}
+
+func (s *Server) updateLink(c *gin.Context) {
+	code := c.Param("code")
+	if !validCode(code) {
+		writeError(c, http.StatusNotFound, "link not found")
+		return
+	}
+
+	var request updateLinkRequest
+	if err := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20)).Decode(&request); err != nil {
+		writeError(c, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if request.Disabled == nil {
+		writeError(c, http.StatusBadRequest, "disabled is required")
+		return
+	}
+
+	link, err := s.store.UpdateLink(c.Request.Context(), code, *request.Disabled)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(c, http.StatusNotFound, "link not found")
+		return
+	}
+	if err != nil {
+		log.Printf("update link: %v", err)
+		writeError(c, http.StatusInternalServerError, "could not update link")
+		return
+	}
+	s.cache.Delete(code)
+	c.JSON(http.StatusOK, link)
+}
+
+func (s *Server) deleteLink(c *gin.Context) {
+	code := c.Param("code")
+	if !validCode(code) {
+		writeError(c, http.StatusNotFound, "link not found")
+		return
+	}
+	if err := s.store.DeleteLink(c.Request.Context(), code); errors.Is(err, store.ErrNotFound) {
+		writeError(c, http.StatusNotFound, "link not found")
+		return
+	} else if err != nil {
+		log.Printf("delete link: %v", err)
+		writeError(c, http.StatusInternalServerError, "could not delete link")
+		return
+	}
+	s.cache.Delete(code)
+	c.Status(http.StatusNoContent)
+}
+
+func (s *Server) qrCode(c *gin.Context) {
+	code := c.Param("code")
+	if !validCode(code) {
+		writeError(c, http.StatusNotFound, "link not found")
+		return
+	}
+
+	link, ok := s.cache.Get(code)
+	if !ok {
+		var err error
+		link, err = s.store.GetLink(c.Request.Context(), code)
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(c, http.StatusNotFound, "link not found")
+			return
+		}
+		if err != nil {
+			log.Printf("qr get link: %v", err)
+			writeError(c, http.StatusInternalServerError, "could not load link")
+			return
+		}
+		s.cache.Set(link)
+	}
+	if link.Disabled || expired(link) {
+		writeError(c, http.StatusGone, "link is no longer active")
+		return
+	}
+
+	png, err := qrcode.Encode(s.shortURL(c, code), qrcode.Medium, 256)
+	if err != nil {
+		log.Printf("qr encode: %v", err)
+		writeError(c, http.StatusInternalServerError, "could not create QR code")
+		return
+	}
+	c.Header("Cache-Control", "public, max-age=300")
+	c.Data(http.StatusOK, "image/png", png)
 }
 
 func (s *Server) listLinks(c *gin.Context) {
@@ -169,6 +313,10 @@ func (s *Server) redirect(c *gin.Context) {
 
 	if link.Disabled {
 		writeError(c, http.StatusGone, "link disabled")
+		return
+	}
+	if expired(link) {
+		writeError(c, http.StatusGone, "link expired")
 		return
 	}
 
@@ -225,16 +373,29 @@ func normalizeLongURL(raw string) (string, error) {
 }
 
 func validCode(code string) bool {
-	if len(code) < 4 || len(code) > 12 {
+	if len(code) < 3 || len(code) > 32 {
 		return false
 	}
 	for _, r := range code {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
 			continue
 		}
 		return false
 	}
 	return true
+}
+
+func reservedCode(code string) bool {
+	switch strings.ToLower(code) {
+	case "api", "graphql", "healthz", "favicon.ico", "dashboard":
+		return true
+	default:
+		return false
+	}
+}
+
+func expired(link store.Link) bool {
+	return link.ExpiresAt != nil && !time.Now().Before(*link.ExpiresAt)
 }
 
 func hashIP(r *http.Request) string {

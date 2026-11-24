@@ -125,7 +125,7 @@ func TestCreateListRedirectAndAnalytics(t *testing.T) {
 func TestGraphQLAnalytics(t *testing.T) {
 	handler, st, _ := newTestServer(t)
 
-	link, err := st.CreateLink(context.Background(), "https://example.com/graphql")
+	link, err := st.CreateLink(context.Background(), store.CreateLinkInput{LongURL: "https://example.com/graphql"})
 	if err != nil {
 		t.Fatalf("CreateLink: %v", err)
 	}
@@ -169,6 +169,96 @@ func TestGraphQLAnalytics(t *testing.T) {
 	}
 }
 
+func TestCustomCodeExpiryAndLifecycle(t *testing.T) {
+	handler, _, _ := newTestServer(t)
+
+	expiresAt := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
+	createBody := fmt.Sprintf(`{"long_url":"https://example.com/sale","custom_code":"winter-sale","expires_at":%q}`, expiresAt)
+	createRequest := httptest.NewRequest(http.MethodPost, "/api/links", strings.NewReader(createBody))
+	createRequest.Header.Set("Content-Type", "application/json")
+	createRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(createRecorder, createRequest)
+	if createRecorder.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", createRecorder.Code, createRecorder.Body.String())
+	}
+	if !strings.Contains(createRecorder.Body.String(), `"code":"winter-sale"`) {
+		t.Fatalf("create body = %s", createRecorder.Body.String())
+	}
+
+	duplicateRequest := httptest.NewRequest(http.MethodPost, "/api/links", strings.NewReader(createBody))
+	duplicateRequest.Header.Set("Content-Type", "application/json")
+	duplicateRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(duplicateRecorder, duplicateRequest)
+	if duplicateRecorder.Code != http.StatusConflict {
+		t.Fatalf("duplicate status = %d, want 409", duplicateRecorder.Code)
+	}
+
+	redirect := httptest.NewRecorder()
+	handler.ServeHTTP(redirect, httptest.NewRequest(http.MethodGet, "/winter-sale", nil))
+	if redirect.Code != http.StatusFound {
+		t.Fatalf("redirect status = %d", redirect.Code)
+	}
+
+	qr := httptest.NewRecorder()
+	handler.ServeHTTP(qr, httptest.NewRequest(http.MethodGet, "/api/qr/winter-sale", nil))
+	if qr.Code != http.StatusOK {
+		t.Fatalf("qr status = %d", qr.Code)
+	}
+	if got := qr.Header().Get("Content-Type"); got != "image/png" {
+		t.Fatalf("qr content type = %q", got)
+	}
+
+	disable := httptest.NewRecorder()
+	disableRequest := httptest.NewRequest(http.MethodPatch, "/api/links/winter-sale", strings.NewReader(`{"disabled":true}`))
+	disableRequest.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(disable, disableRequest)
+	if disable.Code != http.StatusOK {
+		t.Fatalf("disable status = %d, body = %s", disable.Code, disable.Body.String())
+	}
+	disabledRedirect := httptest.NewRecorder()
+	handler.ServeHTTP(disabledRedirect, httptest.NewRequest(http.MethodGet, "/winter-sale", nil))
+	if disabledRedirect.Code != http.StatusGone {
+		t.Fatalf("disabled redirect status = %d, want 410", disabledRedirect.Code)
+	}
+
+	enable := httptest.NewRecorder()
+	enableRequest := httptest.NewRequest(http.MethodPatch, "/api/links/winter-sale", strings.NewReader(`{"disabled":false}`))
+	enableRequest.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(enable, enableRequest)
+	if enable.Code != http.StatusOK {
+		t.Fatalf("enable status = %d", enable.Code)
+	}
+
+	deleteRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(deleteRecorder, httptest.NewRequest(http.MethodDelete, "/api/links/winter-sale", nil))
+	if deleteRecorder.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d", deleteRecorder.Code)
+	}
+	missing := httptest.NewRecorder()
+	handler.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/winter-sale", nil))
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("deleted redirect status = %d, want 404", missing.Code)
+	}
+}
+
+func TestExpiredLinkRedirect(t *testing.T) {
+	handler, st, _ := newTestServer(t)
+	past := time.Now().UTC().Add(-time.Hour)
+	if _, err := st.CreateLink(context.Background(), store.CreateLinkInput{
+		LongURL:   "https://example.com/expired",
+		Code:      "expired-code",
+		ExpiresAt: &past,
+	}); err != nil {
+		t.Fatalf("CreateLink: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/expired-code", nil))
+	if recorder.Code != http.StatusGone {
+		t.Fatalf("expired redirect status = %d, want 410", recorder.Code)
+	}
+}
+
 func TestInvalidCreateRequest(t *testing.T) {
 	handler, _, _ := newTestServer(t)
 
@@ -209,5 +299,14 @@ func TestNotFoundAndDashboard(t *testing.T) {
 	}
 	if !strings.Contains(dashboard.Body.String(), "LinkPulse") {
 		t.Fatal("dashboard is missing LinkPulse")
+	}
+
+	appJS := httptest.NewRecorder()
+	handler.ServeHTTP(appJS, httptest.NewRequest(http.MethodGet, "/app.js", nil))
+	if appJS.Code != http.StatusOK {
+		t.Fatalf("app.js status = %d", appJS.Code)
+	}
+	if !strings.Contains(appJS.Body.String(), "search-input") {
+		t.Fatal("app.js is missing the search UI")
 	}
 }
